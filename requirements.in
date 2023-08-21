@@ -9,3 +9,7 @@ rich-click
 scipy
 statsmodels
 xarray >= 0.16
+
+
+# added later
+# conda install richdem -c conda-forge

@@ -62,6 +62,9 @@ from .profiler import ChannelProfiler, Profiler, TrickleDownProfiler
 from .radiation import Radiation
 from .sink_fill import SinkFiller, SinkFillerBarnes
 from .soil_moisture import SoilInfiltrationGreenAmpt, SoilMoisture
+
+from .soil_landslider import SoilLandsliderGeo
+
 from .space import Space, SpaceLargeScaleEroder
 from .spatial_precip import SpatialPrecipitationDistribution
 from .species_evolution import SpeciesEvolver
@@ -146,6 +149,7 @@ COMPONENTS = [
     SinkFillerBarnes,
     SoilMoisture,
     SoilInfiltrationGreenAmpt,
+    SoilLandsliderGeo,
     Space,
     SpaceLargeScaleEroder,
     SpatialPrecipitationDistribution,
