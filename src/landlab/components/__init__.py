@@ -1,6 +1,7 @@
 from .advection import AdvectionSolverTVD
 from .area_slope_transporter import AreaSlopeTransporter
 from .bedrock_landslider import BedrockLandslider
+from .soil_landslider import SoilLandsliderGeo
 from .carbonate import CarbonateProducer
 from .chi_index import ChiFinder
 from .concentration_tracker import ConcentrationTrackerForDiffusion
@@ -165,6 +166,7 @@ COMPONENTS = [
     SinkFiller,
     SinkFillerBarnes,
     SoilMoisture,
+    SoilLandsliderGeo,
     SoilInfiltrationGreenAmpt,
     Space,
     SpaceLargeScaleEroder,
