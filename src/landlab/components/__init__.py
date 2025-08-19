@@ -9,6 +9,7 @@ from .concentration_tracker import ConcentrationTrackerForSpace
 from .depression_finder import DepressionFinderAndRouter
 from .depth_dependent_diffusion import DepthDependentDiffuser
 from .depth_dependent_taylor_soil_creep import DepthDependentTaylorDiffuser
+from .depth_dependent_taylor_soil_creep_no_weathering import DepthDependentTaylorDiffuserNoWeathering
 from .detachment_ltd_erosion import DepthSlopeProductErosion
 from .detachment_ltd_erosion import DetachmentLtdErosion
 from .diffusion import LinearDiffuser
@@ -109,6 +110,7 @@ COMPONENTS = [
     DepressionFinderAndRouter,
     DepthDependentDiffuser,
     DepthDependentTaylorDiffuser,
+    DepthDependentTaylorDiffuserNoWeathering,
     DepthSlopeProductErosion,
     DetachmentLtdErosion,
     DischargeDiffuser,
