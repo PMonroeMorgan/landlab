@@ -432,7 +432,8 @@ class SoilLandsliderGeo(Component):
             ) / dist_to_initial_node
             
             #####
-            print(f'slope_neighbors_to_crit_node {slope_neighbors_to_crit_node}')
+            if self._verbose_landslides:
+            	print(f'slope_neighbors_to_crit_node {slope_neighbors_to_crit_node}')
             #####
            
             #### here check for the failure plane is stable or unstable FS<1
@@ -451,7 +452,7 @@ class SoilLandsliderGeo(Component):
                 out=np.zeros_like(shearstress),
             )
             #for troubleshooting
-            print(f'FS_critnode {FS_critnode}')
+            #print(f'FS_critnode {FS_critnode}')
             
             #### if the critical node is stable then remove it, and restart the loop
             #### no landslide there.
@@ -484,7 +485,8 @@ class SoilLandsliderGeo(Component):
                 store_volume_sed = 0.0
                 upstream_count = 0
                 upstream_neighbors = neighbors_up
-                print(f'upstream_neighbors {upstream_neighbors}')
+                if self._verbose_landslides:
+                	print(f'upstream_neighbors {upstream_neighbors}')
                 if not self._landslides_on_boundary_nodes:
                     upstream_neighbors = upstream_neighbors[
                         ~self.grid.node_is_boundary(upstream_neighbors)
