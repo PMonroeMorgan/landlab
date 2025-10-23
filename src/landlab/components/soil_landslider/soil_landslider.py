@@ -132,6 +132,22 @@ class SoilLandsliderGeo(Component):
                 critical nodes where landslides initiate, \
                 before landslide runout is calculated ",
         },
+        "rel__wetness": {
+            "dtype": float,
+            "intent": "in",
+            "optional": True,
+            "units": "frac",
+            "mapping": "node",
+            "doc": "fraction of vertical water column saturated by groundwater ",
+        },
+         "factor_of_safety": {
+            "dtype": float,
+            "intent": "out",
+            "optional": False,
+            "units": "none",
+            "mapping": "node",
+            "doc": "Factor of safety calculation output ",
+        },
     }
 
    
@@ -155,7 +171,8 @@ class SoilLandsliderGeo(Component):
         critical_sliding_nodes=None,
         min_deposition_slope=0,
         Rw=0.8,
-        max_step_height=3,
+        Rw_mode="constant",
+        max_step_height=50,
     ):
         """Initialize the SoilLandsliderGeo model.
 
@@ -196,9 +213,14 @@ class SoilLandsliderGeo(Component):
             Provide list with critical nodes where landslides have to initiate
             This cancels the stochastic part of the algorithm and allows the
             user to form landslides at the provided critical nodes.
+        Rw_mode : str, optional
+        	How to assign Rw values:
+          	"constant": use the provided Rw value for all nodes (default).
+          	"calculated": read Rw values from the grid field "rel__wetness".
+        	None or unrecognized: defaults to constant Rw = 0.8
         Rw : float,optional
-            Wetness fraction of  height water column over height soil column
-            Value must be between 0 and 1 [-]
+            Wetness fraction of  height water column over height soil column (vertical)
+            Used only if Rw_mode="constant". Value must be between 0 and 1 [-]
         max_step_height : float, optional
             Maximum height of the bedrock elevation above the failure plane for
             the slide to erode the soil on top and continue
@@ -241,7 +263,7 @@ class SoilLandsliderGeo(Component):
         self._landslides_on_boundary_nodes = landslides_on_boundary_nodes
         self._critical_sliding_nodes = critical_sliding_nodes
         self._min_deposition_slope = min_deposition_slope
-        self._Rw = Rw
+        self._Rw = Rw # see below for edits
         self._max_step_height = max_step_height
 
         # Data structures to store properties of simulated landslides.
@@ -249,6 +271,38 @@ class SoilLandsliderGeo(Component):
         self._landslides_volume = []
         self._landslides_volume_sed = []
         #### removed landslide voume bedrock
+		
+		# Make sure the relative wetness values/grid exist/work and are less than one
+
+
+#		if Rw_mode == "calculated":
+#			if "rel__wetness" not in grid.at_node:
+#				raise ValueError("Rw_mode='calculated' requires a grid field 'rel__wetness' at nodes.")
+#			relwetness = grid.at_node["rel__wetness"]				
+#		elif Rw_mode == "constant":
+#			relwetness = grid.add_zeros("rel_wetness", at="node",dtype=float,clobber=True)
+#			relwetness[:] = Rw
+#		else:
+#    	# Default case: nothing provided, assume value set in defaults above
+#			relwetness = grid.add_zeros("rel_wetness", at="node",dtype=float,clobber=True)
+#			relwetness[:] = Rw
+#			
+        if Rw_mode == "calculated":
+            if "rel__wetness" not in grid.at_node:
+                raise ValueError("Rw_mode='calculated' requires a grid field 'rel__wetness' at nodes.")
+            relwetness = grid.at_node["rel__wetness"]
+
+        elif Rw_mode == "constant":
+            relwetness = grid.add_zeros("rel_wetness", at="node", dtype=float, clobber=True)
+            relwetness[:] = Rw
+
+        else:
+            # Default case: nothing provided, assume value set in defaults above
+            relwetness = grid.add_zeros("rel_wetness", at="node", dtype=float, clobber=True)
+            relwetness[:] = Rw
+			
+
+
 
         # Check input values
         if phi >= 1.0 or phi < 0.0:
@@ -310,11 +364,16 @@ class SoilLandsliderGeo(Component):
         topo = self.grid.at_node["topographic__elevation"]
         bed = self.grid.at_node["bedrock__elevation"]
         steepest_slope = self.grid.at_node["topographic__steepest_slope"]
+        relwetness = self.grid.at_node["rel_wetness"]
+        relwetness[:] = np.clip(relwetness, 0, 1.0) # clip this at 1
+        
         #### calculate slope in degrees for calculations
         slope = np.rad2deg(np.arctan(steepest_slope))
         soil_d = self.grid.at_node["soil__depth"]
         landslide_sed_in = self.grid.at_node["landslide_sediment_point_source"]
         landslide__ero = self.grid.at_node["landslide__erosion"]
+        
+        
         
         # calculate the FS everwhere
         
@@ -343,7 +402,7 @@ class SoilLandsliderGeo(Component):
             #### start by calculating the quick infinite slope factor of safety at each node
             # equation goes to zero if there's no soil
             #factor of safety equation
-            shearstrenth = (self._cohesion_eff + self._grav * soil_d * (np.cos(np.deg2rad(slope)))**2 * (self._rho_s-self._Rw*self._rho_h2o) * np.tan(np.arctan(self._angle_int_frict)))
+            shearstrenth = (self._cohesion_eff + self._grav * soil_d * (np.cos(np.deg2rad(slope)))**2 * (self._rho_s-relwetness*self._rho_h2o) * np.tan(np.arctan(self._angle_int_frict)))
             shearstress=(self._rho_s*self._grav*soil_d*(np.cos(np.deg2rad(slope)))*(np.sin(np.deg2rad(slope))))
             #FS= shearstrenth/ shearstress
             FS = np.divide(
@@ -352,6 +411,9 @@ class SoilLandsliderGeo(Component):
                 where=shearstress > 0,
                 out=np.zeros_like(shearstress),
             )
+            #print(FS)
+            self.grid.at_node["factor_of_safety"] = FS # save FS for everwhere
+            
             
             #### spatial prob  is 1/FS 
             #### if below equilib than failure prob is 1
@@ -442,7 +504,7 @@ class SoilLandsliderGeo(Component):
             slope_fail_critnode=np.rad2deg(np.arctan(slope_fail_critnode_frac))
             z_fail_critnode=crit_node_soil_d
             
-            shearstrenth = (self._cohesion_eff + self._grav * z_fail_critnode * (np.cos(np.deg2rad(slope_fail_critnode)))**2 * (self._rho_s-self._Rw*self._rho_h2o) * np.tan(np.arctan(self._angle_int_frict)))
+            shearstrenth = (self._cohesion_eff + self._grav * z_fail_critnode * (np.cos(np.deg2rad(slope_fail_critnode)))**2 * (self._rho_s-relwetness*self._rho_h2o) * np.tan(np.arctan(self._angle_int_frict)))
             shearstress=(self._rho_s*self._grav*z_fail_critnode*(np.cos(np.deg2rad(slope_fail_critnode)))*(np.sin(np.deg2rad(slope_fail_critnode))))
             #FS= shearstrenth/ shearstress
             FS_critnode = np.divide(
@@ -451,6 +513,8 @@ class SoilLandsliderGeo(Component):
                 where=shearstress > 0,
                 out=np.zeros_like(shearstress),
             )
+            factor_of_safety = FS # store for everywhere...?
+            
             #for troubleshooting
             #print(f'FS_critnode {FS_critnode}')
             
