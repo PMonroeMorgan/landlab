@@ -293,12 +293,12 @@ class SoilLandsliderGeo(Component):
             relwetness = grid.at_node["rel__wetness"]
 
         elif Rw_mode == "constant":
-            relwetness = grid.add_zeros("rel_wetness", at="node", dtype=float, clobber=True)
+            relwetness = grid.add_zeros("rel__wetness", at="node", dtype=float, clobber=True)
             relwetness[:] = Rw
 
         else:
             # Default case: nothing provided, assume value set in defaults above
-            relwetness = grid.add_zeros("rel_wetness", at="node", dtype=float, clobber=True)
+            relwetness = grid.add_zeros("rel__wetness", at="node", dtype=float, clobber=True)
             relwetness[:] = Rw
 			
 
@@ -360,11 +360,14 @@ class SoilLandsliderGeo(Component):
             Volume of suspended sediment.
 
         """
+        #troubleshoot tracking
+        #print("starting landslide erosion")
+        
         # Pointers
         topo = self.grid.at_node["topographic__elevation"]
         bed = self.grid.at_node["bedrock__elevation"]
         steepest_slope = self.grid.at_node["topographic__steepest_slope"]
-        relwetness = self.grid.at_node["rel_wetness"]
+        relwetness = self.grid.at_node["rel__wetness"]
         relwetness[:] = np.clip(relwetness, 0, 1.0) # clip this at 1
         
         #### calculate slope in degrees for calculations
@@ -447,6 +450,17 @@ class SoilLandsliderGeo(Component):
                 ]
         else:
             critical_landslide_nodes = np.array(self._critical_sliding_nodes)
+            #still need to calculate FS though cause we're saving it later.
+            shearstrenth = (self._cohesion_eff + self._grav * soil_d * (np.cos(np.deg2rad(slope)))**2 * (self._rho_s-relwetness*self._rho_h2o) * np.tan(np.arctan(self._angle_int_frict)))
+            shearstress=(self._rho_s*self._grav*soil_d*(np.cos(np.deg2rad(slope)))*(np.sin(np.deg2rad(slope))))
+            #FS= shearstrenth/ shearstress
+            FS = np.divide(
+                shearstrenth,
+                shearstress,
+                where=shearstress > 0,
+                out=np.zeros_like(shearstress),
+            )
+            self.grid.at_node["factor_of_safety"] = FS
 
 
 
@@ -458,6 +472,10 @@ class SoilLandsliderGeo(Component):
             print(f"nbSlides = {len(critical_landslide_nodes)}")
 
         store_cumul_volume = 0.0
+        
+        #troubleshoot tracking
+        #print("slooping through cells to erode")
+        
         #### this while loop loops through all the critical nodes
         while critical_landslide_nodes.size > 0:
             #### work with the first of the list
@@ -465,7 +483,7 @@ class SoilLandsliderGeo(Component):
             crit_node_el = topo[crit_node]
             crit_node_bed = bed[crit_node] #bedrock elevation at the critical node
             crit_node_soil_d=soil_d[crit_node] # soil depth at crit node
-            
+            crit_node_rel_wetness=relwetness[crit_node] #relative wetness at crit node
             
 
             # get 8 neighbors and only keep those to active nodes which are upstream
@@ -503,8 +521,12 @@ class SoilLandsliderGeo(Component):
             slope_fail_critnode_frac=np.max(slope_neighbors_to_crit_node)
             slope_fail_critnode=np.rad2deg(np.arctan(slope_fail_critnode_frac))
             z_fail_critnode=crit_node_soil_d
+            relwetness
             
-            shearstrenth = (self._cohesion_eff + self._grav * z_fail_critnode * (np.cos(np.deg2rad(slope_fail_critnode)))**2 * (self._rho_s-relwetness*self._rho_h2o) * np.tan(np.arctan(self._angle_int_frict)))
+            #troubleshooting
+            #breakpoint()
+            
+            shearstrenth = (self._cohesion_eff + self._grav * z_fail_critnode * (np.cos(np.deg2rad(slope_fail_critnode)))**2 * (self._rho_s-crit_node_rel_wetness*self._rho_h2o) * np.tan(np.arctan(self._angle_int_frict)))
             shearstress=(self._rho_s*self._grav*z_fail_critnode*(np.cos(np.deg2rad(slope_fail_critnode)))*(np.sin(np.deg2rad(slope_fail_critnode))))
             #FS= shearstrenth/ shearstress
             FS_critnode = np.divide(
@@ -560,11 +582,19 @@ class SoilLandsliderGeo(Component):
                 sliding_angle = slope_slide
                 nb_landslide_cells = 0
 
+
+                visited_nodes = set() # this stops the code from re-running nodes that aren't eroded all the way to new_el_1
                 # If landslides become unrealistically big, exit algorithm
                 while upstream_neighbors.size > 0 and (
                     upstream_count <= self._max_pixelsize_landslide
                     and nb_landslide_cells < 1e5
                 ):
+                    # if the slide has been visited already skip it!
+                    if upstream_neighbors[0] in visited_nodes:
+                        upstream_neighbors = np.delete(upstream_neighbors, 0, 0)
+                        continue
+                    visited_nodes.add(upstream_neighbors[0]) # save that we've run this node
+                    
                     distance_to_crit_node = np.sqrt(
                         np.add(
                             np.square(
@@ -583,12 +613,15 @@ class SoilLandsliderGeo(Component):
 # troubleshooting                    
                     #print(f'new_el_1 {new_el_1} upstream_neighbors[0] {upstream_neighbors[0]}')
                     #print(f'new_el_1 {new_el_1} topo upstream_neighbors[0] {topo[upstream_neighbors[0]]}')
-
+                    
+                    # this if block is for if the cell topo elevation is within the failure envelope
                     if new_el_1 < topo[upstream_neighbors[0]]:
-                        #### add in the max step height constraint 
-                        if bed[[upstream_neighbors[0]]] > (new_el_1 + self._max_step_height):
-                            print("maxstepheight triggered") # F
-                            continue
+                        current_node=upstream_neighbors[0]
+                        #### add in the max step height constraint  Commented for now bc maybe unstable
+                        # if bed[[upstream_neighbors[0]]] > (new_el_1 + self._max_step_height):
+                        #     print("maxstepheight triggered") # F
+                        #     
+                        #     continue
                         
                         # Do actual slide
                         upstream_count += 1
@@ -597,7 +630,7 @@ class SoilLandsliderGeo(Component):
                                 soil_d[upstream_neighbors[0]],
                                 topo[upstream_neighbors[0]] - new_el_1,
                             ),
-                            a_min=0.0,
+                            a_min=0, # trying out changing this from 0 to .1mm to fix a bug
                             a_max=None,
                         )
                         #print(f'cell {upstream_neighbors[0]} sed_landslide_ero {sed_landslide_ero}')
@@ -643,7 +676,10 @@ class SoilLandsliderGeo(Component):
                         ]
                         
                         #### only sediment erosion
-                        landslide__ero[upstream_neighbors[0]] = (sed_landslide_ero)
+                        #landslide__ero[upstream_neighbors[0]] = (sed_landslide_ero) # is error causing middle cells to not write...
+                        landslide__ero[current_node] = (sed_landslide_ero)
+                        
+                        print(f'cell {current_node} sed_landslide_ero {sed_landslide_ero}')
 
                     upstream_neighbors = np.delete(upstream_neighbors, 0, 0)
 
@@ -694,6 +730,9 @@ class SoilLandsliderGeo(Component):
             Sediment flux over the simulated domain.
 
         """
+        #troubleshoot tracking
+        #print("starting landslide runout")
+        
         topo = self.grid.at_node["topographic__elevation"]
         bed = self.grid.at_node["bedrock__elevation"]
         soil_d = self.grid.at_node["soil__depth"]
