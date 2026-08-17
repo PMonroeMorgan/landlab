@@ -157,7 +157,7 @@ class SoilLandsliderGeo(Component):
         grid,
         angle_int_frict=1.0,
         threshold_slope=None,
-        cohesion_eff=1e4,
+        cohesion_eff=4e4,
         landslides_return_time=1e5,
         rho_s=2000,
         rho_h2o=1000,
@@ -172,7 +172,8 @@ class SoilLandsliderGeo(Component):
         min_deposition_slope=0,
         Rw=0.8,
         Rw_mode="constant",
-        max_step_height=50,
+        max_step_height=100,
+        stable_stopper_factor=5
     ):
         """Initialize the SoilLandsliderGeo model.
 
@@ -225,6 +226,10 @@ class SoilLandsliderGeo(Component):
             Maximum height of the bedrock elevation above the failure plane for
             the slide to erode the soil on top and continue
             In meters
+        stable_stopper_factor: float, optional
+            The factor of safety that is considered too stable for a slide to 
+            propagate uphill through. Not FS<1 is still required to initiate failure.
+            Defaults to 5
         """
         super().__init__(grid)
 
@@ -265,6 +270,7 @@ class SoilLandsliderGeo(Component):
         self._min_deposition_slope = min_deposition_slope
         self._Rw = Rw # see below for edits
         self._max_step_height = max_step_height
+        self._stable_stopper_factor = stable_stopper_factor
 
         # Data structures to store properties of simulated landslides.
         self._landslides_size = []
@@ -375,10 +381,6 @@ class SoilLandsliderGeo(Component):
         soil_d = self.grid.at_node["soil__depth"]
         landslide_sed_in = self.grid.at_node["landslide_sediment_point_source"]
         landslide__ero = self.grid.at_node["landslide__erosion"]
-        
-        
-        
-        # calculate the FS everwhere
         
         
 
@@ -593,6 +595,9 @@ class SoilLandsliderGeo(Component):
                     if upstream_neighbors[0] in visited_nodes:
                         upstream_neighbors = np.delete(upstream_neighbors, 0, 0)
                         continue
+                    
+                    
+                    
                     visited_nodes.add(upstream_neighbors[0]) # save that we've run this node
                     
                     distance_to_crit_node = np.sqrt(
@@ -618,11 +623,18 @@ class SoilLandsliderGeo(Component):
                     if new_el_1 < topo[upstream_neighbors[0]]:
                         current_node=upstream_neighbors[0]
                         #### add in the max step height constraint  Commented for now bc maybe unstable
-                        # if bed[[upstream_neighbors[0]]] > (new_el_1 + self._max_step_height):
-                        #     print("maxstepheight triggered") # F
-                        #     
-                        #     continue
+                        if bed[[upstream_neighbors[0]]] > (new_el_1 + self._max_step_height):
+                            print("maxstepheight triggered") # F
+                            
+                            continue
                         
+                        # if the slide hits a too stable cell stop propagating uphill that way slide
+                        if FS[current_node] > self._stable_stopper_factor:
+                            #print("stablestopper induced")
+                            continue
+                    
+                    
+                    
                         # Do actual slide
                         upstream_count += 1
                         sed_landslide_ero = np.clip(
@@ -679,7 +691,7 @@ class SoilLandsliderGeo(Component):
                         #landslide__ero[upstream_neighbors[0]] = (sed_landslide_ero) # is error causing middle cells to not write...
                         landslide__ero[current_node] = (sed_landslide_ero)
                         
-                        print(f'cell {current_node} sed_landslide_ero {sed_landslide_ero}')
+                        #print(f'cell {current_node} sed_landslide_ero {sed_landslide_ero}')
 
                     upstream_neighbors = np.delete(upstream_neighbors, 0, 0)
 
