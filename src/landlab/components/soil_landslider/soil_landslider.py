@@ -172,7 +172,7 @@ class SoilLandsliderGeo(Component):
         min_deposition_slope=0,
         Rw=0.8,
         Rw_mode="constant",
-        max_step_height=100,
+        max_step_height=False,
         stable_stopper_factor=5
     ):
         """Initialize the SoilLandsliderGeo model.
@@ -222,10 +222,10 @@ class SoilLandsliderGeo(Component):
         Rw : float,optional
             Wetness fraction of  height water column over height soil column (vertical)
             Used only if Rw_mode="constant". Value must be between 0 and 1 [-]
-        max_step_height : float, optional
+        max_step_height : float or False, optional
             Maximum height of the bedrock elevation above the failure plane for
             the slide to erode the soil on top and continue
-            In meters
+            In meters Defaults to False
         stable_stopper_factor: float, optional
             The factor of safety that is considered too stable for a slide to 
             propagate uphill through. Note FS<1 is still required to initiate failure.
@@ -318,6 +318,14 @@ class SoilLandsliderGeo(Component):
             raise ValueError(
                 f"Fraction of fines must be between 0 and 1 ({fraction_fines_LS})"
             )
+            
+            
+        if max_step_height is not False and not isinstance(max_step_height, (int, float)):
+            raise TypeError(f"max_step_height must be False or a number, got {type(max_step_height)}")
+            
+        if isinstance(max_step_height, bool) and max_step_height is not False:
+            # catches the edge case where someone passes True
+            raise TypeError("max_step_height must be False or a number, not True")
 
         # Set seed
         if seed is not None:
@@ -493,7 +501,7 @@ class SoilLandsliderGeo(Component):
         store_cumul_volume = 0.0
         
         #troubleshoot tracking
-        #print("slooping through cells to erode")
+        #print("looping through cells to erode")
         
         #### this while loop loops through all the critical nodes
         while critical_landslide_nodes.size > 0:
@@ -640,10 +648,12 @@ class SoilLandsliderGeo(Component):
                     if new_el_1 < topo[upstream_neighbors[0]]:
                         current_node=upstream_neighbors[0]
                         #### add in the max step height constraint  Commented for now bc maybe unstable
-                        if bed[[upstream_neighbors[0]]] > (new_el_1 + self._max_step_height):
-                            print("maxstepheight triggered") # F
-                            
+                        if self._max_step_height is not False and bed[[upstream_neighbors[0]]] > (
+                                new_el_1 + self._max_step_height
+                                ):
+                            print("maxstepheight triggered")
                             continue
+                        
                         
                         # if the slide hits a too stable cell stop propagating uphill that way slide
                         if FS[current_node] > self._stable_stopper_factor:
