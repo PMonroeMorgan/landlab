@@ -228,7 +228,7 @@ class SoilLandsliderGeo(Component):
             In meters
         stable_stopper_factor: float, optional
             The factor of safety that is considered too stable for a slide to 
-            propagate uphill through. Not FS<1 is still required to initiate failure.
+            propagate uphill through. Note FS<1 is still required to initiate failure.
             Defaults to 5
         """
         super().__init__(grid)
@@ -419,32 +419,49 @@ class SoilLandsliderGeo(Component):
             #print(FS)
             self.grid.at_node["factor_of_safety"] = FS # save FS for everwhere
             
+            ####### Initial
+            # #### spatial prob  is 1/FS 
+            # #### if below equilib than failure prob is 1
+            # spatial_prob = np.divide(
+            #     1,
+            #     FS,
+            #     where=FS > 0,
+            #     out=np.zeros_like(FS),
+            # )
+            # spatial_prob[spatial_prob > 1] = 1
             
-            #### spatial prob  is 1/FS 
-            #### if below equilib than failure prob is 1
-            spatial_prob = np.divide(
-                1,
-                FS,
-                where=FS > 0,
-                out=np.zeros_like(FS),
-            )
-            spatial_prob[spatial_prob > 1] = 1
-            
-            # Calculate gradients
-            #### deleted this whole section
+            # # Calculate gradients
+            # #### deleted this whole section
  
-            # Temporal probability
-            temporal_prob = 1 - np.exp(-dt / self._landslides_return_time)
+            # # Temporal probability
+            # temporal_prob = 1 - np.exp(-dt / self._landslides_return_time)
 
-            # Combined probability
-            combined_prob = temporal_prob * spatial_prob
-            sliding = np.random.rand(combined_prob.size) < combined_prob
+            # # Combined probability
+            # combined_prob = temporal_prob * spatial_prob
+            # sliding = np.random.rand(combined_prob.size) < combined_prob
+            
+            
+            
+            
+            
+            ######## updated
+            # updating so that sliding is only set by the temporal prob and not stability
+            # Temporal probability Same as before
+            temporal_prob = 1 - np.exp(-dt / self._landslides_return_time)
+            
+            
+            sliding = np.random.rand(FS.size) < temporal_prob
+            # stability is checked at the start of the erosion loop
+
 
             # Now, find the critical node, which is the receiver of critical_landslide_nodes
             # Critical nodes must be unique (a given node can have more receivers...)
             critical_landslide_nodes = np.unique(
                 self.grid.at_node["flow__receiver_node"][np.where(sliding)]
             )
+            # troubleshooting
+            #breakpoint()
+            
             # Remove boundary nodes
             if not self._landslides_on_boundary_nodes:
                 critical_landslide_nodes = critical_landslide_nodes[
